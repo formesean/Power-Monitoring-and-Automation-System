@@ -1,8 +1,8 @@
 #include <xc.h> // include file for the XC8 compiler
 #include <stdio.h>
 
-#include "I2C.h"
-#include "I2C_LCD.h"
+#include "./lib/I2C.h"
+#include "./lib/I2C_LCD.h"
 
 #pragma config FOSC = XT
 #pragma config WDTE = OFF
@@ -17,16 +17,15 @@
 
 void main(void)
 {
-	init_I2C_Master();
-	LCD_Init(0x4E);
-	
-	LCD_Set_Cursor(1, 1);
+  init_I2C_Master();
+  LCD_Init(0x4E); // Initialize LCD module with I2C address = 0x4E
+
+  LCD_Set_Cursor(1, 1);
   LCD_Write_String("Hello");
   LCD_Set_Cursor(2, 1);
   LCD_Write_String("World!");
-	
 
   while (1)
   {
-	}
+  }
 }

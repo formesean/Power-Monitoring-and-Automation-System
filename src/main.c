@@ -16,24 +16,40 @@
 #define _XTAL_FREQ 4000000
 
 unsigned int display_flag = 0;
+unsigned int relay1_on = 0;
+unsigned int relay2_on = 0;
+unsigned int relay3_on = 0;
+unsigned int relayState = 0;
 
 void interrupt ISR()
 {
-	GIE = 0;
-	if (INTF)
-	{
+  GIE = 0;
+  if (INTF)
+  {
     INTF = 0;
-	}
+  }
   else if (RBIF)
   {
     RBIF = 0;
 
     if (RB5 == 1)
-			display_flag = 1;
-		if (RB6 == 1)
-			display_flag = 2;
-		if (RB7 == 1)
-			display_flag = 3;
+    {
+      while (RB5)
+        ;
+      display_flag = 1;
+    }
+    if (RB6 == 1)
+    {
+      while (RB6)
+        ;
+      display_flag = 2;
+    }
+    if (RB7 == 1)
+    {
+      while (RB7)
+        ;
+      display_flag = 3;
+    }
   }
   GIE = 1;
 }
@@ -47,7 +63,7 @@ void main(void)
   GIE = 1;
   PEIE = 1;
 
-  TRISB = 0xE0;
+  TRISB = 0xFF;
   TRISD = 0x00;
   PORTD = 0x00;
 
@@ -61,31 +77,76 @@ void main(void)
 
   while (1)
   {
-	  if (display_flag == 1)
-	  {
+    if (display_flag == 1)
+    {
       LCD_Clear();
       LCD_Set_Cursor(1, 1);
-	  	LCD_Write_String("RB5 Pressed");
-      PORTD = 0x01;
-      display_flag = 0;
-	  }
+      LCD_Write_String("RB5 Pressed");
+      relay1_on ^= 1;
 
-	  if (display_flag == 2)
-	  {
-      LCD_Clear();
-      LCD_Set_Cursor(1, 1);
-	  	LCD_Write_String("RB6 Pressed");
-      PORTD = 0x02;
-      display_flag = 0;
-	  }
+      if (relay1_on)
+      {
+        relayState |= 0x01;
+        PORTD = relayState;
+        LCD_Set_Cursor(2, 1);
+        LCD_Write_String("R1: ON");
+      }
+      else
+      {
+        relayState ^= 0x01;
+        PORTD = relayState;
+        LCD_Set_Cursor(2, 1);
+        LCD_Write_String("R1: OFF");
+      }
+    }
 
-	  if (display_flag == 3)
-	  {
+    if (display_flag == 2)
+    {
       LCD_Clear();
       LCD_Set_Cursor(1, 1);
-	  	LCD_Write_String("RB7 Pressed");
-      PORTD = 0x04;
-      display_flag = 0;
-	  }
+      LCD_Write_String("RB6 Pressed");
+      relay2_on ^= 1;
+
+      if (relay2_on)
+      {
+        relayState |= 0x02;
+        PORTD = relayState;
+        LCD_Set_Cursor(2, 1);
+        LCD_Write_String("R2: ON");
+      }
+      else
+      {
+        relayState ^= 0x02;
+        PORTD = relayState;
+        LCD_Set_Cursor(2, 1);
+        LCD_Write_String("R2: OFF");
+      }
+    }
+
+    if (display_flag == 3)
+    {
+      LCD_Clear();
+      LCD_Set_Cursor(1, 1);
+      LCD_Write_String("RB7 Pressed");
+      relay3_on ^= 1;
+
+      if (relay3_on)
+      {
+        relayState |= 0x04;
+        PORTD = relayState;
+        LCD_Set_Cursor(2, 1);
+        LCD_Write_String("R3: ON");
+      }
+      else
+      {
+        relayState ^= 0x04;
+        PORTD = relayState;
+        LCD_Set_Cursor(2, 1);
+        LCD_Write_String("R3: OFF");
+      }
+    }
+
+    display_flag = 0;
+    __delay_ms(50);
   }
 }

@@ -1,6 +1,6 @@
 #include <xc.h>
 
-#include "i2c.h"
+#include "I2C.h"
 
 // Initializes the I2C master mode
 void init_I2C_Master(void)

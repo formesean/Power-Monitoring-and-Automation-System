@@ -1,6 +1,8 @@
 {
   "files.associations": {
     "i2c_lcd.h": "c",
-    "i2c.h": "c"
+    "i2c.h": "c",
+    "iosfwd": "c",
+    "xlocbuf": "c"
   }
 }

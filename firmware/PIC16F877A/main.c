@@ -1,9 +1,12 @@
-#include <xc.h> // include file for the XC8 compiler
+#include <xc.h>
 #include <stdio.h>
+#include <stdint.h>
+#include <string.h>
 
-#include "I2C.h"
 #include "I2C_LCD.h"
+#include "Serial.h"
 
+// Configuration bits
 #pragma config FOSC = XT
 #pragma config WDTE = OFF
 #pragma config PWRTE = ON
@@ -14,139 +17,101 @@
 #pragma config CP = OFF
 
 #define _XTAL_FREQ 4000000
+#define CMD_BUFFER_SIZE 10
 
-unsigned int display_flag = 0;
-unsigned int relay1_on = 0;
-unsigned int relay2_on = 0;
-unsigned int relay3_on = 0;
-unsigned int relayState = 0;
+// Global variables
+volatile unsigned char relayNum;
+uint8_t counter = 0;
+int voltageZero = 512;
+int currentZero = 512;
+bit allRelayFlag = 0;
+unsigned char adconMap[] = {
+    0x41, 0x49, 0x51, 0x59, // RA0-RA3
+    0x61, 0x69, 0X71, 0X79, // RA4-RA7
+};
 
-void interrupt ISR()
+// Function prototypes
+void setup();
+int readADC(uint8_t channel);
+
+void main()
 {
-  GIE = 0;
-  if (INTF)
-  {
-    INTF = 0;
-  }
-  else if (RBIF)
-  {
-    RBIF = 0;
-
-    if (RB5 == 1)
-    {
-      while (RB5)
-        ;
-      display_flag = 1;
-    }
-    if (RB6 == 1)
-    {
-      while (RB6)
-        ;
-      display_flag = 2;
-    }
-    if (RB7 == 1)
-    {
-      while (RB7)
-        ;
-      display_flag = 3;
-    }
-  }
-  GIE = 1;
-}
-
-void main(void)
-{
-  INTE = 1;
-  INTF = 0;
-  RBIE = 1;
-  RBIF = 0;
-  GIE = 1;
-  PEIE = 1;
-
-  TRISB = 0xFF;
-  TRISD = 0x00;
-  PORTD = 0x00;
-
-  init_I2C_Master();
-  LCD_Init(0x4E); // Initialize LCD module with I2C address = 0x4E
-
-  LCD_Set_Cursor(1, 1);
-  LCD_Write_String("Hello");
-  LCD_Set_Cursor(2, 1);
-  LCD_Write_String("World!");
+  setup();
 
   while (1)
   {
-    if (display_flag == 1)
-    {
-      LCD_Clear();
-      LCD_Set_Cursor(1, 1);
-      LCD_Write_String("RB5 Pressed");
-      relay1_on ^= 1;
+    unsigned int rawVoltage = readADC(0);
+    unsigned int rawCurrent = readADC(1);
+    char rxBuffer[6];
 
-      if (relay1_on)
+    // __delay_ms(1);
+    // counter++;
+    // if (counter >= 5000)
+    // {
+      UART_Write_Text("DATA:");
+      UART_Write_Number(rawVoltage);
+      UART_Write_Text(",");
+      UART_Write_Number(rawCurrent);
+      UART_Write_Text("\n");
+    //   counter = 0;
+    // }
+
+    if (RCIF)
+    {
+      if (OERR)
       {
-        relayState |= 0x01;
-        PORTD = relayState;
-        LCD_Set_Cursor(2, 1);
-        LCD_Write_String("R1: ON");
+        CREN = 0;
+        CREN = 1;
       }
-      else
+
+      relayNum = RCREG - '0';
+
+      if (relayNum >= 1 && relayNum <= 4)
       {
-        relayState ^= 0x01;
-        PORTD = relayState;
-        LCD_Set_Cursor(2, 1);
-        LCD_Write_String("R1: OFF");
+        unsigned char bit_pos = relayNum - 1;
+        PORTD ^= (1 << bit_pos);
+      }
+
+      if (relayNum == 5)
+      {
+        allRelayFlag ^= 1;
+
+        if (allRelayFlag)
+          PORTD = 0x0F;
+        else
+          PORTD = 0x00;
       }
     }
-
-    if (display_flag == 2)
-    {
-      LCD_Clear();
-      LCD_Set_Cursor(1, 1);
-      LCD_Write_String("RB6 Pressed");
-      relay2_on ^= 1;
-
-      if (relay2_on)
-      {
-        relayState |= 0x02;
-        PORTD = relayState;
-        LCD_Set_Cursor(2, 1);
-        LCD_Write_String("R2: ON");
-      }
-      else
-      {
-        relayState ^= 0x02;
-        PORTD = relayState;
-        LCD_Set_Cursor(2, 1);
-        LCD_Write_String("R2: OFF");
-      }
-    }
-
-    if (display_flag == 3)
-    {
-      LCD_Clear();
-      LCD_Set_Cursor(1, 1);
-      LCD_Write_String("RB7 Pressed");
-      relay3_on ^= 1;
-
-      if (relay3_on)
-      {
-        relayState |= 0x04;
-        PORTD = relayState;
-        LCD_Set_Cursor(2, 1);
-        LCD_Write_String("R3: ON");
-      }
-      else
-      {
-        relayState ^= 0x04;
-        PORTD = relayState;
-        LCD_Set_Cursor(2, 1);
-        LCD_Write_String("R3: OFF");
-      }
-    }
-
-    display_flag = 0;
-    __delay_ms(50);
   }
 }
+
+void setup()
+{
+  SPBRG = 25;
+  SYNC = 0;
+  SPEN = 1;
+  TX9 = 0;
+  BRGH = 1;
+  TXEN = 1;
+  RX9 = 0;
+  CREN = 1;
+
+  ADCON1 = 0x80;
+
+  TRISD = 0x00;
+  PORTD = 0x00;
+}
+
+int readADC(uint8_t channel)
+{
+  if (channel >= 0 && channel <= 7)
+    ADCON0 = adconMap[channel];
+
+  __delay_ms(1);
+  GO = 1;
+  while (GO_DONE == 1)
+    ;
+  return ((ADRESH << 8) | ADRESL);
+}
+
+// EOF

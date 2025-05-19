@@ -1,8 +1,11 @@
 #include <xc.h>
 #include <stdio.h>
+#include <stdint.h>
+#include <string.h>
 
-#include "I2C.h"
 #include "I2C_LCD.h"
+#include "I2C.h"
+#include "Serial.h"
 
 // Configuration bits
 #pragma config FOSC = XT
@@ -17,144 +20,214 @@
 #define _XTAL_FREQ 4000000
 
 // Global variables
-unsigned int display_flag = 0;
-unsigned char receivedData;
-bit receivedData_flag = 0;
-unsigned char sendData;
-bit sendFlag = 0;
+volatile unsigned char received;
+int relayState;
 bit allRelayFlag = 0;
+uint16_t rawVoltage[10] = {0};
+uint16_t rawCurrent[10] = {0};
+unsigned char adconMap[] = {
+    0x41, 0x49, 0x51, 0x59, // RA0-RA3
+    0x61, 0x69, 0X71, 0X79, // RA4-RA7
+};
+int switch1Flag = 0;
+  int switch2Flag = 0;
+  int switch3Flag = 0;
+  int switch4Flag = 0;
 
-// Interrupt Service Routine
-void interrupt ISR() {
+
+// Function prototypes
+void setup();
+int readADC(uint8_t channel);
+void init_LCD(void); 
+void displayLCDOff();
+void displayLCDOn();
+void stateDisplay(int relayState);
+void setSwitchLabel(uint8_t row, uint8_t col, uint8_t switchNum, const char *status);
+
+void main()
+{
+  setup();
+  init_LCD();
+
+  while (1)
+  {
+    if (RCIF)
+    {
+      if (OERR)
+      {
+        CREN = 0;
+        CREN = 1;
+      }
+
+      received = RCREG;
+
+      if (received >= 'A' && received <= 'D')
+      {
+        unsigned char bit_pos = ((received - 64) - 1) + 4;
+
+        if (PORTD & (1 << bit_pos))
+          PORTD &= ~(1 << bit_pos);
+        else
+          PORTD |= (1 << bit_pos);
+
+        relayState = PORTD;
+        stateDisplay( relayState);
+      }
+      else if (received == 'E')
+      {
+        allRelayFlag ^= 1;
+
+        if (allRelayFlag)
+        {
+          PORTD = 0x00;
+          displayLCDOff();
+        }
+          
+        else
+        {
+          PORTD = 0xF0;
+          displayLCDOn();
+        }
     
-  if (RCIF) {
-    if (OERR) {
-      CREN = 0; // Clear overrun error
-      CREN = 1; // Re-enable receiver
-    }
-    receivedData_flag = 1;
+        relayState = PORTD;
+      }
+      else if (received == 'F')
+      {
+        char buf[32];
 
-    receivedData = RCREG;
-    switch (receivedData) {
-      case '1': display_flag = 1; break;
-      case '2': display_flag = 2; break;
-      case '3': display_flag = 3; break;
-      case '4': display_flag = 4; break;
-      case '5': display_flag = 5; break;
+        for (unsigned int i = 0; i < 10; i++)
+        {
+          rawVoltage[i] = readADC(0);
+          rawCurrent[i] = readADC(1);
+        }
+
+        UART_Write_Text("data:");
+        for (int i = 0; i < 10; i++)
+        {
+          sprintf(buf, "%u,%u", rawVoltage[i], rawCurrent[i]);
+          UART_Write_Text(buf);
+          if (i < 9)
+            UART_Write_Text(";");
+        }
+        UART_Write_Text("\n");
+      }
+      else if (received == 'G')
+      {
+        char buf[16];
+        UART_Write_Text("state:");
+        sprintf(buf, "0x%02X\n", relayState);
+        UART_Write_Text(buf);
+        UART_Write_Text("\n");
+      }
     }
   }
-
-    if (INTF) {
-      INTF = 0;       // Clear external interrupt flag
-      sendFlag = 1;   // Set flag to send data
-    }
 }
 
-// Initialize UART, Interrupts, and GPIO 
-void initRegisters() {
-  // UART Setup for 9600bps @ 4MHz
-  SPBRG = 25;       // For 9600 baud rate (4MHz, BRGH=1)
-  SYNC = 0;         // Asynchronous mode
-  SPEN = 1;         // Enable serial port (TX/ RX)
-  TX9 = 0;          
-  BRGH = 1;         // High-speed baud rate
-  TXEN = 1;         // Enable transmitter
-  RX9 = 0;          
-  CREN = 1;         // Enable continuous receive
+void setup()
+{
+  SPBRG = 25;
+  SYNC = 0;
+  SPEN = 1;
+  TX9 = 0;
+  BRGH = 1;
+  TXEN = 1;
+  RX9 = 0;
+  CREN = 1;
 
-  // Interrupts
-  RCIE = 1;         // Enable UART receive interrupt
-  INTE = 1;         // Enable external interrupt (RB0)
-  PEIE = 1;         // Enable peripheral interrupts
-  GIE = 1;          // Enable global interrupts
+  ADCON1 = 0x80;
 
-  // GPIO Setup
-  TRISB = 0xFF;     // PORTB as input (RB0 for interrupt)
-  TRISD = 0x00;     // PORTD as output (relay control)
-  PORTD = 0x00;     // Clear PORTD
+  TRISD = 0x00;
+  PORTD = 0xF0;
+}
+
+int readADC(uint8_t channel)
+{
+  if (channel >= 0 && channel <= 7)
+    ADCON0 = adconMap[channel];
+
+  __delay_ms(1);
+  GO = 1;
+  while (GO_DONE == 1)
+    ;
+  return ((ADRESH << 8) | ADRESL);
 }
 
 // LCD Initialization
-void init_LCD(void) {
+void init_LCD(void)
+{
   init_I2C_Master();     // I2C master init
   LCD_Init(0x4E);        // LCD init with address 0x4E
-  LCD_Set_Cursor(1, 1);
-  LCD_Write_String("Hello");
-  LCD_Set_Cursor(2, 1);
-  LCD_Write_String("World!");
+  LCD_Set_Cursor(1, 2);
+  LCD_Write_String("1: OFF");
+
+  LCD_Set_Cursor(1, 9);
+  LCD_Write_String("3: OFF");
+
+  LCD_Set_Cursor(2, 2);
+  LCD_Write_String("2: OFF");
+
+  LCD_Set_Cursor(2, 9);
+  LCD_Write_String("4: OFF");
 }
 
-// Update LCD Line
-void update_LCD(unsigned char line, const char *message) {
-  LCD_Set_Cursor(line, 1);
-  LCD_Write_String("                "); // Clear line
-  LCD_Set_Cursor(line, 1);
-  LCD_Write_String(message);
+void setSwitchLabel(uint8_t row, uint8_t col, uint8_t switchNum, const char *status)
+{
+  char label[10];
+  snprintf(label, sizeof(label), "%d: %s", switchNum, status);
+  LCD_Set_Cursor(row, col);
+  LCD_Write_String(label);
 }
 
-// Send data via UART
-void sendDataUART(unsigned char chData) {
-  while (!TXIF);  // Wait for TX buffer to be empty
-  TXREG = chData;
-}
+void displayLCDOn()
+{
+  const uint8_t rows[4] = {1, 2, 1, 2};
+  const uint8_t cols[4] = {2, 2, 9, 9};
+  int *flags[4] = {&switch1Flag, &switch2Flag, &switch3Flag, &switch4Flag};
 
-// Toggle relay using bitmask (RD0–RD3) 
-void toggleRelay(unsigned char relayNum) {
-  if (relayNum < 1 || relayNum > 4) return;
-
-  unsigned char bit_pos = relayNum - 1;
-
-  PORTD ^= (1 << bit_pos);  
-
-  if (PORTD & (1 << bit_pos)) {
-    update_LCD(2, "Relay ON ");
-  } 
-  else {
-    update_LCD(2, "Relay OFF");
+  for (int i = 0; i < 4; i++)
+  {
+    setSwitchLabel(rows[i], cols[i], i + 1, "ON ");
+    *flags[i] = 1;
   }
 }
 
-void setAllRelays(unsigned char state) {
-  unsigned char bitmask = 0x0F; // Bitmask for RD0–RD3 (00001111)
+void displayLCDOff()
+{
+  const uint8_t rows[4] = {1, 2, 1, 2};
+  const uint8_t cols[4] = {2, 2, 9, 9};
+  int *flags[4] = {&switch1Flag, &switch2Flag, &switch3Flag, &switch4Flag};
 
-  allRelayFlag ^= 0;
-  
-  if (allRelayFlag) {
-    // Turn all relays ON (Set RD0–RD3 to 1)
-    PORTD |= bitmask;   // Set bits RD0–RD3
-    update_LCD(2, "All ON ");
-    } 
-
-    else {
-    // Turn all relays OFF (Clear RD0–RD3)
-    PORTD &= ~bitmask;  // Clear bits RD0–RD3
-    update_LCD(2, "All OFF");
-    }
+  for (int i = 0; i < 4; i++)
+  {
+    setSwitchLabel(rows[i], cols[i], i + 1, "OFF");
+    *flags[i] = 0;
+  }
 }
 
 
-void main() {
-  initRegisters();
-  init_LCD();
+void stateDisplay(int relayState)
+{
+  const unsigned char relayBits[4] = {0x10, 0x20, 0x40, 0x80};
 
-  while (1) {
-    if (receivedData_flag) {
-      toggleRelay(display_flag);
+  const unsigned char row[4] = {1, 2, 1, 2};
+  const unsigned char col[4] = {6, 6, 13, 13};
 
-      if (display_flag == 5)
-      {
-        setAllRelays(display_flag);
+  int *switchFlags[4] = {&switch1Flag, &switch2Flag, &switch3Flag, &switch4Flag};
+
+  for (int i = 0; i < 4; i++)
+  {
+    if (relayState == relayBits[i])
+    {
+      *switchFlags[i] ^= 1; // Toggle flag
+
+      LCD_Set_Cursor(lcdRows[i], lcdCols[i]);
+      if (*switchFlags[i])
+        LCD_Write_String("N ");
+      else
+        LCD_Write_String("FF");
+        break;
       }
-      
-      display_flag = 0;
-      receivedData_flag = 0;
-    }
-
-    if (sendFlag) {
-      sendDataUART('1');
-      sendFlag = 0;
-    }
-
-    // __delay_ms(50);
-    }
+  }
 }
+
+// EOF

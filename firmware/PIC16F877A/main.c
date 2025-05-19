@@ -52,7 +52,12 @@ void main()
       if (received >= 'A' && received <= 'D')
       {
         unsigned char bit_pos = ((received - 64) - 1) + 4;
-        PORTD ^= (1 << bit_pos);
+
+        if (PORTD & (1 << bit_pos))
+          PORTD &= ~(1 << bit_pos);
+        else
+          PORTD |= (1 << bit_pos);
+
         relayState = PORTD;
       }
       else if (received == 'E')
@@ -60,9 +65,9 @@ void main()
         allRelayFlag ^= 1;
 
         if (allRelayFlag)
-          PORTD = 0xF0;
-        else
           PORTD = 0x00;
+        else
+          PORTD = 0xF0;
 
         relayState = PORTD;
       }
@@ -112,7 +117,7 @@ void setup()
   ADCON1 = 0x80;
 
   TRISD = 0x00;
-  PORTD = 0x00;
+  PORTD = 0xF0;
 }
 
 int readADC(uint8_t channel)

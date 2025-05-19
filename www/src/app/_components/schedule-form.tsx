@@ -53,7 +53,7 @@ export default function ScheduleForm({
       if (outlet === "all") {
         commandString = `ALL_${action.toUpperCase()}`;
       } else {
-        commandString = `OUTLET${outlet}_${action.toUpperCase()}`;
+        commandString = `Outlet_${outlet}_${action.toUpperCase()}`;
       }
 
       // Send to API

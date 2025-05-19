@@ -17,14 +17,13 @@
 #pragma config CP = OFF
 
 #define _XTAL_FREQ 4000000
-#define CMD_BUFFER_SIZE 10
 
 // Global variables
-volatile unsigned char relayNum;
-uint8_t counter = 0;
-int voltageZero = 512;
-int currentZero = 512;
+volatile unsigned char received;
+int relayState;
 bit allRelayFlag = 0;
+uint16_t rawVoltage[10] = {0};
+uint16_t rawCurrent[10] = {0};
 unsigned char adconMap[] = {
     0x41, 0x49, 0x51, 0x59, // RA0-RA3
     0x61, 0x69, 0X71, 0X79, // RA4-RA7
@@ -40,22 +39,6 @@ void main()
 
   while (1)
   {
-    unsigned int rawVoltage = readADC(0);
-    unsigned int rawCurrent = readADC(1);
-    char rxBuffer[6];
-
-    // __delay_ms(1);
-    // counter++;
-    // if (counter >= 5000)
-    // {
-      UART_Write_Text("DATA:");
-      UART_Write_Number(rawVoltage);
-      UART_Write_Text(",");
-      UART_Write_Number(rawCurrent);
-      UART_Write_Text("\n");
-    //   counter = 0;
-    // }
-
     if (RCIF)
     {
       if (OERR)
@@ -64,22 +47,52 @@ void main()
         CREN = 1;
       }
 
-      relayNum = RCREG - '0';
+      received = RCREG;
 
-      if (relayNum >= 1 && relayNum <= 4)
+      if (received >= 'A' && received <= 'D')
       {
-        unsigned char bit_pos = relayNum - 1;
+        unsigned char bit_pos = ((received - 64) - 1) + 4;
         PORTD ^= (1 << bit_pos);
+        relayState = PORTD;
       }
-
-      if (relayNum == 5)
+      else if (received == 'E')
       {
         allRelayFlag ^= 1;
 
         if (allRelayFlag)
-          PORTD = 0x0F;
+          PORTD = 0xF0;
         else
           PORTD = 0x00;
+
+        relayState = PORTD;
+      }
+      else if (received == 'F')
+      {
+        char buf[32];
+
+        for (unsigned int i = 0; i < 10; i++)
+        {
+          rawVoltage[i] = readADC(0);
+          rawCurrent[i] = readADC(1);
+        }
+
+        UART_Write_Text("data:");
+        for (int i = 0; i < 10; i++)
+        {
+          sprintf(buf, "%u,%u", rawVoltage[i], rawCurrent[i]);
+          UART_Write_Text(buf);
+          if (i < 9)
+            UART_Write_Text(";");
+        }
+        UART_Write_Text("\n");
+      }
+      else if (received == 'G')
+      {
+        char buf[16];
+        UART_Write_Text("state:");
+        sprintf(buf, "0x%02X\n", relayState);
+        UART_Write_Text(buf);
+        UART_Write_Text("\n");
       }
     }
   }

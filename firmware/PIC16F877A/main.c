@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "I2C.h"
 #include "I2C_LCD.h"
 #include "Serial.h"
 
@@ -32,10 +33,15 @@ unsigned char adconMap[] = {
 // Function prototypes
 void setup();
 int readADC(uint8_t channel);
+void updateLCDDisplay();
 
 void main()
 {
   setup();
+  init_I2C_Master();
+  LCD_Init(0x4E);
+  LCD_Clear();
+  updateLCDDisplay();
 
   while (1)
   {
@@ -59,6 +65,7 @@ void main()
           PORTD |= (1 << bit_pos);
 
         relayState = PORTD;
+        updateLCDDisplay();
       }
       else if (received == 'E')
       {
@@ -70,6 +77,7 @@ void main()
           PORTD = 0xF0;
 
         relayState = PORTD;
+        updateLCDDisplay();
       }
       else if (received == 'F')
       {
@@ -130,6 +138,39 @@ int readADC(uint8_t channel)
   while (GO_DONE == 1)
     ;
   return ((ADRESH << 8) | ADRESL);
+}
+
+void updateLCDDisplay()
+{
+  LCD_Set_Cursor(1, 1);
+  LCD_Write_String(" 1: ");
+
+  if (PORTD & (1 << 4))
+    LCD_Write_String("OFF");
+  else
+    LCD_Write_String("ON ");
+
+  LCD_Write_String("  3: ");
+
+  if (PORTD & (1 << 6))
+    LCD_Write_String("OFF");
+  else
+    LCD_Write_String("ON ");
+
+  LCD_Set_Cursor(2, 1);
+  LCD_Write_String(" 2: ");
+
+  if (PORTD & (1 << 5))
+    LCD_Write_String("OFF");
+  else
+    LCD_Write_String("ON ");
+
+  LCD_Write_String("  4: ");
+
+  if (PORTD & (1 << 7))
+    LCD_Write_String("OFF");
+  else
+    LCD_Write_String("ON ");
 }
 
 // EOF

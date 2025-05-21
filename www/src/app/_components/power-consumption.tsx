@@ -7,7 +7,6 @@ interface Outlet {
   id: number;
   name: string;
   isOn: boolean;
-  consumption: number;
 }
 
 interface PowerConsumptionProps {
@@ -195,12 +194,6 @@ export default function PowerConsumption({
               <div className="font-medium">
                 {outlets.filter((outlet) => outlet.isOn).length} of{" "}
                 {outlets.length}
-              </div>
-            </div>
-            <div>
-              <div className="text-sm text-gray-500">Current Consumption</div>
-              <div className="font-bold text-xl text-green-600">
-                {totalConsumption}W
               </div>
             </div>
           </div>

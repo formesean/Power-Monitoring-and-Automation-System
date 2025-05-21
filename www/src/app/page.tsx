@@ -10,34 +10,86 @@ import ScheduleList from "./_components/schedule-list";
 import ScheduleForm from "./_components/schedule-form";
 
 export default function Home() {
+  const [isLoading, setIsLoading] = useState(true);
   const [outlets, setOutlets] = useState([
-    { id: 1, name: "Outlet_1", isOn: false, consumption: 5 },
-    { id: 2, name: "Outlet_2", isOn: false, consumption: 8 },
-    { id: 3, name: "Outlet_3", isOn: false, consumption: 12 },
-    { id: 4, name: "Outlet_4", isOn: false, consumption: 7 },
+    { id: 1, name: "Outlet_1", isOn: false },
+    { id: 2, name: "Outlet_2", isOn: false },
+    { id: 3, name: "Outlet_3", isOn: false },
+    { id: 4, name: "Outlet_4", isOn: false },
   ]);
 
-  const [masterOn, setMasterOn] = useState(false);
-  const [totalConsumption, setTotalConsumption] = useState(0);
-  const [scheduleRefreshTrigger, setScheduleRefreshTrigger] = useState(0);
+  const [masterOn, setMasterOn] = useState<boolean>(false);
+  const [scheduleRefreshTrigger, setScheduleRefreshTrigger] =
+    useState<number>(0);
+  const [relayState, setRelayState] = useState<number>(15);
+  const [powerConsumption, setPowerConsumption] = useState<number>(0);
+  const [isAllFlagToggled, setIsAllFlagToggled] = useState<boolean>(false);
 
-  // Calculate total power consumption whenever outlet states change
+  // Update outlet states based on relayState
   useEffect(() => {
-    const total = outlets.reduce((sum, outlet) => {
-      return sum + (outlet.isOn ? outlet.consumption : 0);
-    }, 0);
-    setTotalConsumption(total);
+    const updateOutletsFromRelayState = () => {
+      const newOutlets = outlets.map((outlet) => {
+        let shouldBeOn = false;
+        switch (relayState) {
+          case 15: // ALL OFF
+            shouldBeOn = false;
+            break;
+          case 14: // 1 ON
+            shouldBeOn = outlet.id === 1;
+            break;
+          case 13: // 2 ON
+            shouldBeOn = outlet.id === 2;
+            break;
+          case 12: // 1,2 ON
+            shouldBeOn = outlet.id === 1 || outlet.id === 2;
+            break;
+          case 11: // 3 ON
+            shouldBeOn = outlet.id === 3;
+            break;
+          case 10: // 1,3 ON
+            shouldBeOn = outlet.id === 1 || outlet.id === 3;
+            break;
+          case 9: // 2,3 ON
+            shouldBeOn = outlet.id === 2 || outlet.id === 3;
+            break;
+          case 8: // 1,2,3 ON
+            shouldBeOn = outlet.id === 1 || outlet.id === 2 || outlet.id === 3;
+            break;
+          case 7: // 4 ON
+            shouldBeOn = outlet.id === 4;
+            break;
+          case 6: // 1,4 ON
+            shouldBeOn = outlet.id === 1 || outlet.id === 4;
+            break;
+          case 5: // 2,4 ON
+            shouldBeOn = outlet.id === 2 || outlet.id === 4;
+            break;
+          case 4: // 1,2,4 ON
+            shouldBeOn = outlet.id === 1 || outlet.id === 2 || outlet.id === 4;
+            break;
+          case 3: // 3,4 ON
+            shouldBeOn = outlet.id === 3 || outlet.id === 4;
+            break;
+          case 2: // 1,3,4 ON
+            shouldBeOn = outlet.id === 1 || outlet.id === 3 || outlet.id === 4;
+            break;
+          case 1: // 2,3,4 ON
+            shouldBeOn = outlet.id === 2 || outlet.id === 3 || outlet.id === 4;
+            break;
+          case 0: // ALL ON
+            shouldBeOn = true;
+            break;
+        }
+        return { ...outlet, isOn: shouldBeOn };
+      });
+      setOutlets(newOutlets);
 
-    // Update master button state based on all outlets
-    const allOn = outlets.every((outlet) => outlet.isOn);
-    const allOff = outlets.every((outlet) => !outlet.isOn);
+      if (relayState == 0) setMasterOn(true);
+      else setMasterOn(false);
+    };
 
-    if (allOn && !masterOn) {
-      setMasterOn(true);
-    } else if (allOff && masterOn) {
-      setMasterOn(false);
-    }
-  }, [outlets, masterOn]);
+    updateOutletsFromRelayState();
+  }, [relayState]);
 
   // Toggle individual outlet
   const toggleOutlet = (id: number) => {
@@ -45,6 +97,11 @@ export default function Home() {
       outlet.id === id ? { ...outlet, isOn: !outlet.isOn } : outlet
     );
     setOutlets(updatedOutlets);
+
+    // If any outlet is turned OFF, masterOn should be false
+    if (updatedOutlets.some((outlet) => !outlet.isOn)) {
+      setMasterOn(false);
+    }
 
     const toggled = updatedOutlets.find((o) => o.id === id);
     sendCommand(`${toggled?.name}_${toggled?.isOn ? "ON" : "OFF"}`);
@@ -59,6 +116,17 @@ export default function Home() {
     sendCommand(`ALL_${newState ? "ON" : "OFF"}`);
   };
 
+  // Update isAllFlagToggled when masterOn or outlets change
+  useEffect(() => {
+    const allOn = outlets.every((outlet) => outlet.isOn);
+    if (masterOn || allOn) {
+      setIsAllFlagToggled(true);
+    } else {
+      setIsAllFlagToggled(false);
+    }
+  }, [masterOn, outlets]);
+  console.log(isAllFlagToggled);
+
   // Trigger schedule list refresh
   const handleScheduleAdded = () => {
     setScheduleRefreshTrigger((prev) => prev + 1);
@@ -66,7 +134,7 @@ export default function Home() {
 
   const sendCommand = async (command: string) => {
     try {
-      const res = await fetch("/api/send", {
+      const res = await fetch("/api/direct", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -77,12 +145,106 @@ export default function Home() {
       const data = await res.json();
 
       if (!res.ok) throw new Error(data.error || "Failed to send command");
-
-      console.log("Command sent:", data);
     } catch (err) {
       console.error("Error sending command:", err);
     }
   };
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const response = await fetch("/api/state", { method: "POST" });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+
+        const fetchCommands = async (retryCount = 0) => {
+          try {
+            const res = await fetch("/api/state", {
+              method: "GET",
+              headers: { "Content-Type": "application/json" },
+            });
+
+            const data = await res.json();
+
+            if (res.status === 409 && retryCount < 3) {
+              await new Promise((resolve) => setTimeout(resolve, 2500));
+              return fetchCommands(retryCount + 1);
+            }
+
+            if (!res.ok)
+              throw new Error(data.error || "Failed to fetch commands");
+
+            const deletePromises = data.commands.map(async (cmd: any) => {
+              const { command_string } = cmd;
+
+              if (command_string.startsWith("POWER:")) {
+                const powerValue = parseFloat(command_string.split(":")[1]);
+                // console.log("Parsed power value:", powerValue);
+                if (!isNaN(powerValue)) {
+                  setPowerConsumption(powerValue);
+                }
+              }
+
+              if (command_string.startsWith("RELAY_STATE:")) {
+                const hexValue = command_string.split(":")[1];
+                const relayValue = parseInt(hexValue, 16) >> 4;
+                // console.log("Parsed relay value:", relayValue);
+                if (!isNaN(relayValue)) {
+                  setRelayState(relayValue);
+                }
+              }
+
+              const deleteRes = await fetch(`/api/direct?commandId=${cmd.id}`, {
+                method: "DELETE",
+              });
+
+              if (!deleteRes.ok) {
+                const deleteErr = await deleteRes.text();
+                if (!deleteRes.status.toString().startsWith("404")) {
+                  console.error("Failed to delete command:", deleteErr);
+                }
+              }
+            });
+
+            await Promise.all(deletePromises);
+          } catch (error) {
+            if (retryCount < 3) {
+              await new Promise((resolve) => setTimeout(resolve, 2500));
+              return fetchCommands(retryCount + 1);
+            }
+            throw error;
+          }
+        };
+
+        await fetchCommands();
+        setIsLoading(false);
+      } catch (error) {
+        console.error("Error fetching relay state:", error);
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+    const interval = setInterval(fetchData, 2500);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (isLoading) {
+    return (
+      <main className="min-h-screen bg-gray-50 p-4 md:p-8 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold mb-2">Loading...</h2>
+          <p className="text-gray-500">
+            Initializing your smart outlet controller
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-gray-50 p-4 md:p-8">
@@ -148,6 +310,7 @@ export default function Home() {
             <ScheduleForm
               outlets={outlets}
               onScheduleAdded={handleScheduleAdded}
+              isAllFlagToggled={isAllFlagToggled}
             />
           </div>
 
@@ -156,7 +319,7 @@ export default function Home() {
             {/* Power Consumption */}
             <PowerConsumption
               outlets={outlets}
-              totalConsumption={totalConsumption}
+              totalConsumption={powerConsumption}
             />
 
             {/* Schedule List */}

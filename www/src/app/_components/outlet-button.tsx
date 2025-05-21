@@ -7,7 +7,6 @@ interface Outlet {
   id: number;
   name: string;
   isOn: boolean;
-  consumption: number;
 }
 
 interface OutletButtonProps {
@@ -25,7 +24,7 @@ export default function OutletButton({ outlet, onToggle }: OutletButtonProps) {
           }`}
         />
         <div>
-          <p className="font-medium">{outlet.name}</p>
+          <p className="font-medium">{outlet.name.replace(/_/g, " ")}</p>
           <p className="text-sm text-gray-500">
             {outlet.isOn ? "Active" : "Inactive"}
           </p>

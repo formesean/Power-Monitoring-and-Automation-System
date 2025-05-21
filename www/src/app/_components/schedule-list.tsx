@@ -23,23 +23,30 @@ export default function ScheduleList({
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchSchedules = async () => {
     setIsLoading(true);
-    fetch("/api/schedule")
-      .then((res) => res.json())
-      .then((data) => {
-        const parsed: Schedule[] = data.map((s: any) => ({
-          id: s.id,
-          outlet: s.outlet,
-          action: s.action,
-          time: s.time,
-          days: s.days,
-          cron: s.cron,
-        }));
-        setSchedules(parsed);
-      })
-      .finally(() => setIsLoading(false));
+    const res = await fetch("/api/schedule");
+    const data = await res.json();
+    const parsed: Schedule[] = data.map((s: any) => ({
+      id: s.id,
+      outlet: s.outlet,
+      action: s.action,
+      time: s.time,
+      cron: s.cron,
+    }));
+    setSchedules(parsed);
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    fetchSchedules();
   }, [refreshTrigger]);
+
+  // Add polling
+  useEffect(() => {
+    const interval = setInterval(fetchSchedules, 5000); // Poll every 5 seconds
+    return () => clearInterval(interval);
+  }, []);
 
   const handleDelete = async (id: string) => {
     await fetch("/api/schedule/delete", {
@@ -70,40 +77,40 @@ export default function ScheduleList({
           </div>
         ) : (
           <div className="space-y-3">
-            {schedules.map((schedule) => (
-              <div
-                key={schedule.id}
-                className="flex items-center justify-between p-3 border rounded-lg bg-gray-50"
-              >
-                <div className="flex items-start gap-3">
-                  <div
-                    className={`p-2 rounded-full ${
-                      schedule.action === "ON"
-                        ? "bg-green-100 text-green-600"
-                        : "bg-red-100 text-red-600"
-                    }`}
-                  >
-                    <Clock className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="font-medium">{schedule.outlet}</p>
-                    <p className="text-sm text-gray-500">
-                      Turn {schedule.action} at {schedule.time} ({schedule.days}
-                      )
-                    </p>
+            {(() => {
+              // Filter out duplicates based on outlet, action, time, and days
+              const seen = new Set();
+              const uniqueSchedules = schedules.filter((schedule) => {
+                const key = `${schedule.outlet}|${schedule.action}|${schedule.time}|${schedule.days}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+              });
+              return uniqueSchedules.map((schedule) => (
+                <div
+                  key={schedule.id}
+                  className="flex items-center justify-between p-3 border rounded-lg bg-gray-50"
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`p-2 rounded-full ${
+                        schedule.action === "ON"
+                          ? "bg-green-100 text-green-600"
+                          : "bg-red-100 text-red-600"
+                      }`}
+                    >
+                      <Clock className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="font-medium">{schedule.outlet}</p>
+                      <p className="text-sm text-gray-500">
+                        Turn {schedule.action} at {schedule.time}
+                      </p>
+                    </div>
                   </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-gray-500 hover:text-red-500"
-                  onClick={() => handleDelete(schedule.id)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  <span className="sr-only">Delete</span>
-                </Button>
-              </div>
-            ))}
+              ));
+            })()}
           </div>
         )}
       </CardContent>

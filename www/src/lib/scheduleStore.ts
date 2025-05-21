@@ -3,7 +3,6 @@ type Schedule = {
   outlet: string;
   action: string;
   time: string;
-  days: string;
   cron: string;
 };
 

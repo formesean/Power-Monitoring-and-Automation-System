@@ -19,16 +19,17 @@ import { toast } from "sonner";
 interface ScheduleFormProps {
   outlets: Array<{ id: number; name: string }>;
   onScheduleAdded: () => void;
+  isAllFlagToggled: boolean;
 }
 
 export default function ScheduleForm({
   outlets,
   onScheduleAdded,
+  isAllFlagToggled,
 }: ScheduleFormProps) {
   const [outlet, setOutlet] = useState<string>("all");
   const [action, setAction] = useState<string>("on");
   const [time, setTime] = useState<string>("08:00");
-  const [days, setDays] = useState<string>("everyday");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -38,15 +39,7 @@ export default function ScheduleForm({
     try {
       // Convert time and days to cron expression
       const [hours, minutes] = time.split(":");
-      let cronExpression = "";
-
-      if (days === "everyday") {
-        cronExpression = `${minutes} ${hours} * * *`;
-      } else if (days === "weekdays") {
-        cronExpression = `${minutes} ${hours} * * 1-5`;
-      } else if (days === "weekends") {
-        cronExpression = `${minutes} ${hours} * * 0,6`;
-      }
+      let cronExpression = `${minutes} ${hours} * * *`;
 
       // Create command string
       let commandString = "";
@@ -56,40 +49,64 @@ export default function ScheduleForm({
         commandString = `Outlet_${outlet}_${action.toUpperCase()}`;
       }
 
-      // Send to API
-      const response = await fetch("/api/schedule", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          time: cronExpression,
-          command: commandString,
-          outlet: outlet === "all" ? "All Outlets" : `Outlet ${outlet}`,
-          action: action.toUpperCase(),
-          rawTime: time,
-          days,
-        }),
-      });
+      // If isAllFlagToggled is true and outlet is 'all', send API twice
+      if (!isAllFlagToggled && outlet === "all" && action === "off") {
+        await fetch("/api/schedule", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            time: cronExpression,
+            command: commandString,
+            outlet: "All Outlets",
+            action: action.toUpperCase(),
+            rawTime: time,
+          }),
+        });
+        await fetch("/api/schedule", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            time: cronExpression,
+            command: commandString,
+            outlet: "All Outlets",
+            action: action.toUpperCase(),
+            rawTime: time,
+          }),
+        });
+        toast("Schedule created", {
+          description: `All outlets will turn ${action} at ${time}`,
+        });
+        onScheduleAdded();
+      } else {
+        const response = await fetch("/api/schedule", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            time: cronExpression,
+            command: commandString,
+            outlet: outlet === "all" ? "All Outlets" : `Outlet ${outlet}`,
+            action: action.toUpperCase(),
+            rawTime: time,
+          }),
+        });
 
-      if (!response.ok) {
-        throw new Error("Failed to schedule command");
+        if (!response.ok) {
+          throw new Error("Failed to schedule command");
+        }
+
+        toast("Schedule created", {
+          description: `${
+            outlet === "all" ? "All outlets" : `Outlet ${outlet}`
+          } will turn ${action} at ${time}`,
+        });
+        onScheduleAdded();
       }
-
-      toast("Schedule created", {
-        description: `${
-          outlet === "all" ? "All outlets" : `Outlet ${outlet}`
-        } will turn ${action} at ${time} ${
-          days === "everyday"
-            ? "every day"
-            : days === "weekdays"
-            ? "on weekdays"
-            : "on weekends"
-        }`,
-      });
-
-      // Notify parent component
-      onScheduleAdded();
     } catch (error) {
       console.error("Error scheduling command:", error);
       toast("Error scheduling", {
@@ -121,7 +138,7 @@ export default function ScheduleForm({
                   <SelectItem value="all">All Outlets</SelectItem>
                   {outlets.map((outlet) => (
                     <SelectItem key={outlet.id} value={outlet.id.toString()}>
-                      {outlet.name}
+                      {outlet.name.replace(/_/g, " ")}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -153,20 +170,6 @@ export default function ScheduleForm({
                   className="flex h-10 w-full rounded-md border border-input bg-background pl-10 pr-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 />
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="days">Days</Label>
-              <Select value={days} onValueChange={setDays}>
-                <SelectTrigger id="days">
-                  <SelectValue placeholder="Select days" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="everyday">Every Day</SelectItem>
-                  <SelectItem value="weekdays">Weekdays</SelectItem>
-                  <SelectItem value="weekends">Weekends</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           </div>
 

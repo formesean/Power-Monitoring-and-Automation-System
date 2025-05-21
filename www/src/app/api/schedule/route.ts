@@ -14,7 +14,7 @@ export async function GET() {
 // Handle POST request to schedule new command
 export async function POST(req: NextRequest) {
   try {
-    const { time, command, outlet, action, rawTime, days } = await req.json();
+    const { time, command, outlet, action, rawTime } = await req.json();
 
     if (!time || !command) {
       return NextResponse.json(
@@ -30,7 +30,6 @@ export async function POST(req: NextRequest) {
       outlet,
       action,
       time: rawTime,
-      days,
       cron: time,
     });
 

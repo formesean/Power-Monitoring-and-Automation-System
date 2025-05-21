@@ -21,7 +21,7 @@
 
 // Global variables
 volatile unsigned char received;
-int relayState;
+int relayState = 0xF0;
 bit allRelayFlag = 0;
 uint16_t rawVoltage[10] = {0};
 uint16_t rawCurrent[10] = {0};
